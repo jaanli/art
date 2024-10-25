@@ -1,73 +1,153 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <style>
-    canvas {
-      background: #111;
-      touch-action: none;
-    }
-  </style>
-</head>
-<body>
-  <canvas id="art"></canvas>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/typescript/5.3.3/typescript.min.js"></script>
-  <script type="text/typescript">
-    type Point = {
-      x: number;
-      y: number;
-      hue: number;
-    }
+<style>
+canvas {
+    background: #111;
+    touch-action: none
+}
+.controls {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-family: Arial;
+    background: rgba(0,0,0,0.5);
+    padding: 10px;
+    border-radius: 5px;
+}
+</style>
+<div class="controls">
+    <label>Max Particles: <input type="range" id="maxParticles" min="10" max="200" value="50"></label><br>
+    <label>Size: <input type="range" id="size" min="5" max="100" value="40"></label><br>
+    <label>Speed: <input type="range" id="speed" min="1" max="10" value="2"></label><br>
+    <label>Trail Length: <input type="range" id="fade" min="1" max="100" value="80"></label><br>
+    <label>Repulsion: <input type="range" id="repulsion" min="0" max="100" value="0"></label><br>
+    <button id="clearBtn">Clear</button>
+    <button id="gravityBtn">Toggle Gravity</button>
+    <button id="modeBtn">Toggle Mode</button>
+</div>
+<canvas id="a"></canvas>
+<script>
+const c = document.getElementById('a')
+const x = c.getContext('2d')
+let p = []  // primary points
+let q = []  // secondary points
+let v = []  // velocities
+let useGravity = false
+let mode = 0
 
-    const canvas = document.getElementById('art') as HTMLCanvasElement;
-    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-    const points: Point[] = [];
-    
-    function resize(): void {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+const config = {
+    maxParticles: 50,
+    baseSize: 40,
+    speedMultiplier: 2,
+    fadeRate: 0.8,
+    gravity: 0.1,
+    bounce: 0.8,
+    repulsion: 0
+}
+
+document.getElementById('maxParticles').addEventListener('input', e => {
+    config.maxParticles = parseInt(e.target.value)
+    while (p.length > config.maxParticles) {
+        p.shift()
+        q.shift()
+        v.shift()
     }
+})
+document.getElementById('size').addEventListener('input', e => config.baseSize = parseInt(e.target.value))
+document.getElementById('speed').addEventListener('input', e => config.speedMultiplier = parseInt(e.target.value))
+document.getElementById('fade').addEventListener('input', e => config.fadeRate = e.target.value / 100)
+document.getElementById('repulsion').addEventListener('input', e => config.repulsion = e.target.value / 100)
+document.getElementById('clearBtn').addEventListener('click', () => { p = []; q = []; v = [] })
+document.getElementById('gravityBtn').addEventListener('click', () => useGravity = !useGravity)
+document.getElementById('modeBtn').addEventListener('click', () => mode = (mode + 1) % 3)
+
+const r = _ => {
+    c.width = innerWidth
+    c.height = innerHeight
+}
+
+const d = e => {
+    let { clientX: X, clientY: Y } = e.touches?.[0] ?? e
+    let { left: l, top: t } = c.getBoundingClientRect()
+    let h = (X - l + Y - t) % 360
     
-    function draw(e: MouseEvent | Touch): void {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const hue = (x + y) % 360;
-      
-      points.push({ x, y, hue });
-      if (points.length > 50) points.shift();
-      
-      render();
+    p.push({ x: X - l, y: Y - t, h })
+    q.push({ x: X - l, y: Y - t, h })
+    v.push({
+        x: (Math.random() * 4 - 2) * config.speedMultiplier,
+        y: (Math.random() * 4 - 2) * config.speedMultiplier
+    })
+    
+    if (p.length > config.maxParticles) {
+        p.shift()
+        q.shift()
+        v.shift()
     }
+}
+
+const a = _ => {
+    x.clearRect(0, 0, c.width, c.height)
     
-    function render(): void {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      points.forEach((point: Point, i: number) => {
-        const size = (i / points.length) * 40 + 10;
-        ctx.globalAlpha = (i / points.length) * 0.8 + 0.2;
-        ctx.globalCompositeOperation = 'lighter';
+    p.forEach((t, i) => {
+        if (useGravity) {
+            v[i].y += config.gravity
+            if (q[i].y > c.height) {
+                q[i].y = c.height
+                v[i].y = -v[i].y * config.bounce
+            }
+            if (q[i].x < 0 || q[i].x > c.width) {
+                v[i].x = -v[i].x * config.bounce
+            }
+        }
+
+        // Particle repulsion
+        if (config.repulsion > 0) {
+            p.forEach((o, j) => {
+                if (i !== j) {
+                    let dx = q[i].x - q[j].x
+                    let dy = q[i].y - q[j].y
+                    let d = Math.sqrt(dx * dx + dy * dy)
+                    if (d < 100) {
+                        v[i].x += (dx / d) * config.repulsion
+                        v[i].y += (dy / d) * config.repulsion
+                    }
+                }
+            })
+        }
         
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-        ctx.fillStyle = `hsl(${point.hue}, 100%, 50%)`;
-        ctx.fill();
-      });
-    }
+        q[i].x += v[i].x
+        q[i].y += v[i].y
+        
+        const baseAlpha = i / p.length * config.fadeRate + 0.2
+        const size = i / p.length * config.baseSize + 10
+        
+        x.globalAlpha = baseAlpha
+        x.globalCompositeOperation = mode === 0 ? 'lighter' : mode === 1 ? 'xor' : 'difference'
+        
+        x.beginPath()
+        x.arc(p[i].x, p[i].y, size, 0, Math.PI * 2)
+        x.fillStyle = `hsl(${t.h},100%,50%)`
+        x.fill()
+        
+        x.beginPath()
+        x.arc(q[i].x, q[i].y, size, 0, Math.PI * 2)
+        x.fill()
+        
+        x.globalAlpha = baseAlpha * 0.5
+        x.beginPath()
+        x.arc(q[i].x, q[i].y, size * 1.5, 0, Math.PI * 2)
+        x.fill()
+    })
+    
+    requestAnimationFrame(a)
+}
 
-    // Setup
-    resize();
-    window.addEventListener('resize', resize);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('touchmove', (e: TouchEvent) => {
-      e.preventDefault();
-      draw(e.touches[0]);
-    });
-  </script>
-  <script>
-    // Compile and run TypeScript
-    const tsCode = document.querySelector('script[type="text/typescript"]').textContent;
-    const jsCode = ts.transpile(tsCode);
-    eval(jsCode);
-  </script>
-</body>
-</html>
+r()
+addEventListener('resize', r)
+c.addEventListener('mousemove', d)
+c.addEventListener('touchmove', e => {
+    e.preventDefault()
+    d(e)
+})
+a()
+</script>
