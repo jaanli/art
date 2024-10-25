@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    canvas {
+      background: #111;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="art"></canvas>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/typescript/5.3.3/typescript.min.js"></script>
+  <script type="text/typescript">
+    type Point = {
+      x: number;
+      y: number;
+      hue: number;
+    }
+
+    const canvas = document.getElementById('art') as HTMLCanvasElement;
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+    const points: Point[] = [];
+    
+    function resize(): void {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    
+    function draw(e: MouseEvent | Touch): void {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const hue = (x + y) % 360;
+      
+      points.push({ x, y, hue });
+      if (points.length > 50) points.shift();
+      
+      render();
+    }
+    
+    function render(): void {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      points.forEach((point: Point, i: number) => {
+        const size = (i / points.length) * 40 + 10;
+        ctx.globalAlpha = (i / points.length) * 0.8 + 0.2;
+        ctx.globalCompositeOperation = 'lighter';
+        
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = `hsl(${point.hue}, 100%, 50%)`;
+        ctx.fill();
+      });
+    }
+
+    // Setup
+    resize();
+    window.addEventListener('resize', resize);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('touchmove', (e: TouchEvent) => {
+      e.preventDefault();
+      draw(e.touches[0]);
+    });
+  </script>
+  <script>
+    // Compile and run TypeScript
+    const tsCode = document.querySelector('script[type="text/typescript"]').textContent;
+    const jsCode = ts.transpile(tsCode);
+    eval(jsCode);
+  </script>
+</body>
+</html>
