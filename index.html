@@ -1,153 +1,149 @@
 <!DOCTYPE html>
 <style>
-canvas {
-    background: #111;
-    touch-action: none
-}
-.controls {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    color: white;
-    font-family: Arial;
-    background: rgba(0,0,0,0.5);
-    padding: 10px;
-    border-radius: 5px;
-}
+canvas{background:#111;touch-action:none}
+.ui{position:fixed;top:10px;left:10px;color:#fff;font-family:sans-serif;background:#0007;padding:10px;border-radius:5px}
 </style>
-<div class="controls">
-    <label>Max Particles: <input type="range" id="maxParticles" min="10" max="200" value="50"></label><br>
-    <label>Size: <input type="range" id="size" min="5" max="100" value="40"></label><br>
-    <label>Speed: <input type="range" id="speed" min="1" max="10" value="2"></label><br>
-    <label>Trail Length: <input type="range" id="fade" min="1" max="100" value="80"></label><br>
-    <label>Repulsion: <input type="range" id="repulsion" min="0" max="100" value="0"></label><br>
-    <button id="clearBtn">Clear</button>
-    <button id="gravityBtn">Toggle Gravity</button>
-    <button id="modeBtn">Toggle Mode</button>
+
+<div class="ui">
+  <label>Particles: <input type="range" id="particles" min="10" max="200" value="50"></label><br>
+  <label>Size: <input type="range" id="size" min="5" max="100" value="40"></label><br>
+  <label>Speed: <input type="range" id="speed" min="1" max="10" value="2"></label><br>
+  <label>Trail: <input type="range" id="fade" min="1" max="100" value="80"></label><br>
+  <label>Force: <input type="range" id="force" min="0" max="100" value="0"></label><br>
+  <button id="clear">Clear</button>
+  <button id="gravity">Gravity</button>
+  <button id="blend">Blend</button>
 </div>
-<canvas id="a"></canvas>
+
+<canvas id="canvas"></canvas>
+
 <script>
-const c = document.getElementById('a')
-const x = c.getContext('2d')
-let p = []  // primary points
-let q = []  // secondary points
-let v = []  // velocities
-let useGravity = false
-let mode = 0
-
-const config = {
-    maxParticles: 50,
-    baseSize: 40,
-    speedMultiplier: 2,
-    fadeRate: 0.8,
-    gravity: 0.1,
-    bounce: 0.8,
-    repulsion: 0
-}
-
-document.getElementById('maxParticles').addEventListener('input', e => {
-    config.maxParticles = parseInt(e.target.value)
-    while (p.length > config.maxParticles) {
-        p.shift()
-        q.shift()
-        v.shift()
+class Particles {
+  constructor(canvas) {
+    this.canvas = canvas
+    this.ctx = canvas.getContext('2d')
+    this.p = []  // particles
+    this.useGravity = false
+    this.blendMode = 0
+    this.cfg = {
+      max: 50,
+      size: 40,
+      speed: 2,
+      fade: 0.8,
+      force: 0
     }
-})
-document.getElementById('size').addEventListener('input', e => config.baseSize = parseInt(e.target.value))
-document.getElementById('speed').addEventListener('input', e => config.speedMultiplier = parseInt(e.target.value))
-document.getElementById('fade').addEventListener('input', e => config.fadeRate = e.target.value / 100)
-document.getElementById('repulsion').addEventListener('input', e => config.repulsion = e.target.value / 100)
-document.getElementById('clearBtn').addEventListener('click', () => { p = []; q = []; v = [] })
-document.getElementById('gravityBtn').addEventListener('click', () => useGravity = !useGravity)
-document.getElementById('modeBtn').addEventListener('click', () => mode = (mode + 1) % 3)
-
-const r = _ => {
-    c.width = innerWidth
-    c.height = innerHeight
-}
-
-const d = e => {
-    let { clientX: X, clientY: Y } = e.touches?.[0] ?? e
-    let { left: l, top: t } = c.getBoundingClientRect()
-    let h = (X - l + Y - t) % 360
     
-    p.push({ x: X - l, y: Y - t, h })
-    q.push({ x: X - l, y: Y - t, h })
-    v.push({
-        x: (Math.random() * 4 - 2) * config.speedMultiplier,
-        y: (Math.random() * 4 - 2) * config.speedMultiplier
+    window.onresize = () => this.resize()
+    canvas.onmousemove = e => this.add(e)
+    canvas.ontouchmove = e => {
+      e.preventDefault()
+      this.add(e)
+    }
+
+    this.resize()
+    this.animate()
+  }
+
+  resize() {
+    this.canvas.width = innerWidth
+    this.canvas.height = innerHeight
+  }
+
+  add(e) {
+    const {clientX, clientY} = e.touches?.[0] ?? e
+    const r = this.canvas.getBoundingClientRect()
+    const x = clientX - r.left
+    const y = clientY - r.top
+    const hue = (x + y) % 360
+    
+    this.p.push({
+      start: {x, y},
+      pos: {x, y},
+      hue,
+      vel: {
+        x: (Math.random() * 4 - 2) * this.cfg.speed,
+        y: (Math.random() * 4 - 2) * this.cfg.speed
+      }
     })
     
-    if (p.length > config.maxParticles) {
-        p.shift()
-        q.shift()
-        v.shift()
+    if(this.p.length > this.cfg.max) this.p.shift()
+  }
+
+  update(p) {
+    if(this.useGravity) {
+      p.vel.y += 0.1
+      if(p.pos.y > this.canvas.height) {
+        p.pos.y = this.canvas.height
+        p.vel.y *= -0.8
+      }
+      if(p.pos.x < 0 || p.pos.x > this.canvas.width) {
+        p.vel.x *= -0.8
+      }
     }
-}
 
-const a = _ => {
-    x.clearRect(0, 0, c.width, c.height)
+    if(this.cfg.force > 0) {
+      this.p.forEach(o => {
+        if(p !== o) {
+          const dx = p.pos.x - o.pos.x
+          const dy = p.pos.y - o.pos.y
+          const d = Math.hypot(dx, dy)
+          if(d < 100) {
+            const f = this.cfg.force / d
+            p.vel.x += dx * f
+            p.vel.y += dy * f
+          }
+        }
+      })
+    }
+
+    p.pos.x += p.vel.x
+    p.pos.y += p.vel.y
+  }
+
+  draw(p, i) {
+    const alpha = i/this.p.length * this.cfg.fade + 0.2
+    const size = i/this.p.length * this.cfg.size + 10
     
-    p.forEach((t, i) => {
-        if (useGravity) {
-            v[i].y += config.gravity
-            if (q[i].y > c.height) {
-                q[i].y = c.height
-                v[i].y = -v[i].y * config.bounce
-            }
-            if (q[i].x < 0 || q[i].x > c.width) {
-                v[i].x = -v[i].x * config.bounce
-            }
-        }
-
-        // Particle repulsion
-        if (config.repulsion > 0) {
-            p.forEach((o, j) => {
-                if (i !== j) {
-                    let dx = q[i].x - q[j].x
-                    let dy = q[i].y - q[j].y
-                    let d = Math.sqrt(dx * dx + dy * dy)
-                    if (d < 100) {
-                        v[i].x += (dx / d) * config.repulsion
-                        v[i].y += (dy / d) * config.repulsion
-                    }
-                }
-            })
-        }
-        
-        q[i].x += v[i].x
-        q[i].y += v[i].y
-        
-        const baseAlpha = i / p.length * config.fadeRate + 0.2
-        const size = i / p.length * config.baseSize + 10
-        
-        x.globalAlpha = baseAlpha
-        x.globalCompositeOperation = mode === 0 ? 'lighter' : mode === 1 ? 'xor' : 'difference'
-        
-        x.beginPath()
-        x.arc(p[i].x, p[i].y, size, 0, Math.PI * 2)
-        x.fillStyle = `hsl(${t.h},100%,50%)`
-        x.fill()
-        
-        x.beginPath()
-        x.arc(q[i].x, q[i].y, size, 0, Math.PI * 2)
-        x.fill()
-        
-        x.globalAlpha = baseAlpha * 0.5
-        x.beginPath()
-        x.arc(q[i].x, q[i].y, size * 1.5, 0, Math.PI * 2)
-        x.fill()
+    this.ctx.globalAlpha = alpha
+    this.ctx.globalCompositeOperation = ['lighter','xor','difference'][this.blendMode]
+    this.ctx.fillStyle = `hsl(${p.hue},100%,50%)`
+    
+    ;[p.start, p.pos, p.pos].forEach((pos, j) => {
+      this.ctx.beginPath()
+      this.ctx.arc(pos.x, pos.y, size * (j === 2 ? 1.5 : 1), 0, Math.PI * 2)
+      this.ctx.fill()
+      this.ctx.globalAlpha = alpha * (j === 2 ? 0.5 : 1)
     })
-    
-    requestAnimationFrame(a)
+  }
+
+  animate() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    this.p.forEach(p => this.update(p))
+    this.p.forEach((p, i) => this.draw(p, i))
+    requestAnimationFrame(() => this.animate())
+  }
 }
 
-r()
-addEventListener('resize', r)
-c.addEventListener('mousemove', d)
-c.addEventListener('touchmove', e => {
-    e.preventDefault()
-    d(e)
+const sys = new Particles(document.getElementById('canvas'))
+
+const controls = {
+  particles: v => {
+    sys.cfg.max = +v
+    while(sys.p.length > sys.cfg.max) sys.p.shift()
+  },
+  size: v => sys.cfg.size = +v,
+  speed: v => sys.cfg.speed = +v,
+  fade: v => sys.cfg.fade = v/100,
+  force: v => sys.cfg.force = v/100,
+  clear: () => sys.p = [],
+  gravity: () => sys.useGravity = !sys.useGravity,
+  blend: () => sys.blendMode = (sys.blendMode + 1) % 3
+}
+
+Object.keys(controls).forEach(id => {
+  const el = document.getElementById(id)
+  el?.addEventListener(id in {clear:1, gravity:1, blend:1} ? 'click' : 'input', 
+    e => controls[id](e.target.value)
+  )
 })
-a()
 </script>
