@@ -10,14 +10,48 @@ canvas{background:#111;touch-action:none}
   <label>Speed: <input type="range" id="speed" min="1" max="10" value="2"></label><br>
   <label>Trail: <input type="range" id="fade" min="1" max="100" value="80"></label><br>
   <label>Force: <input type="range" id="force" min="0" max="100" value="0"></label><br>
+  <label>Wave: <input type="range" id="wave" min="0" max="100" value="0"></label><br>
   <button id="clear">Clear</button>
   <button id="gravity">Gravity</button>
   <button id="blend">Blend</button>
+  <button id="behavior">Cycle Behavior</button>
 </div>
 
 <canvas id="canvas"></canvas>
 
 <script>
+// Behavior modifiers
+const behaviors = {
+  normal: (p, t) => {},
+  
+  sine: (p, t) => {
+    const freq = 0.002
+    const amp = p.sys.cfg.wave * 2
+    p.vel.y += Math.sin(t * freq + p.pos.x * 0.01) * amp
+  },
+  
+  spiral: (p, t) => {
+    const angle = t * 0.001
+    const force = p.sys.cfg.wave * 0.1
+    p.vel.x += Math.cos(angle) * force
+    p.vel.y += Math.sin(angle) * force
+  },
+  
+  vortex: (p, t) => {
+    const dx = p.pos.x - p.sys.canvas.width/2
+    const dy = p.pos.y - p.sys.canvas.height/2
+    const dist = Math.hypot(dx, dy)
+    const angle = Math.atan2(dy, dx)
+    const force = p.sys.cfg.wave * 0.1
+    p.vel.x -= Math.cos(angle) * force
+    p.vel.y -= Math.sin(angle) * force
+    if(dist < 50) {
+      p.vel.x *= 0.95
+      p.vel.y *= 0.95
+    }
+  }
+}
+
 class Particles {
   constructor(canvas) {
     this.canvas = canvas
@@ -25,12 +59,15 @@ class Particles {
     this.p = []  // particles
     this.useGravity = false
     this.blendMode = 0
+    this.behavior = 'normal'
+    this.time = 0
     this.cfg = {
       max: 50,
       size: 40,
       speed: 2,
       fade: 0.8,
-      force: 0
+      force: 0,
+      wave: 0
     }
     
     window.onresize = () => this.resize()
@@ -57,6 +94,7 @@ class Particles {
     const hue = (x + y) % 360
     
     this.p.push({
+      sys: this,
       start: {x, y},
       pos: {x, y},
       hue,
@@ -70,6 +108,10 @@ class Particles {
   }
 
   update(p) {
+    // Apply current behavior
+    behaviors[this.behavior](p, this.time)
+
+    // Apply gravity if enabled
     if(this.useGravity) {
       p.vel.y += 0.1
       if(p.pos.y > this.canvas.height) {
@@ -81,6 +123,7 @@ class Particles {
       }
     }
 
+    // Apply repulsion force
     if(this.cfg.force > 0) {
       this.p.forEach(o => {
         if(p !== o) {
@@ -96,8 +139,13 @@ class Particles {
       })
     }
 
+    // Update position
     p.pos.x += p.vel.x
     p.pos.y += p.vel.y
+    
+    // Add damping
+    p.vel.x *= 0.99
+    p.vel.y *= 0.99
   }
 
   draw(p, i) {
@@ -117,6 +165,7 @@ class Particles {
   }
 
   animate() {
+    this.time++
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     this.p.forEach(p => this.update(p))
     this.p.forEach((p, i) => this.draw(p, i))
@@ -135,14 +184,20 @@ const controls = {
   speed: v => sys.cfg.speed = +v,
   fade: v => sys.cfg.fade = v/100,
   force: v => sys.cfg.force = v/100,
+  wave: v => sys.cfg.wave = v/100,
   clear: () => sys.p = [],
   gravity: () => sys.useGravity = !sys.useGravity,
-  blend: () => sys.blendMode = (sys.blendMode + 1) % 3
+  blend: () => sys.blendMode = (sys.blendMode + 1) % 3,
+  behavior: () => {
+    const types = Object.keys(behaviors)
+    const current = types.indexOf(sys.behavior)
+    sys.behavior = types[(current + 1) % types.length]
+  }
 }
 
 Object.keys(controls).forEach(id => {
   const el = document.getElementById(id)
-  el?.addEventListener(id in {clear:1, gravity:1, blend:1} ? 'click' : 'input', 
+  el?.addEventListener(id in {clear:1,gravity:1,blend:1,behavior:1} ? 'click' : 'input', 
     e => controls[id](e.target.value)
   )
 })
