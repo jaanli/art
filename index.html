@@ -15,6 +15,7 @@ canvas{background:#111;touch-action:none}
   <button id="gravity">Gravity</button>
   <button id="blend">Blend</button>
   <button id="behavior">Cycle Behavior</button>
+  <span id="currentBehavior"></span>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -49,6 +50,27 @@ const behaviors = {
       p.vel.x *= 0.95
       p.vel.y *= 0.95
     }
+  },
+
+  noise: (p, t) => {
+    const f = p.sys.cfg.wave * 0.1
+    p.vel.x += (Math.random() - 0.5) * f
+    p.vel.y += (Math.random() - 0.5) * f
+  },
+
+  orbit: (p, t) => {
+    const r = 200 + p.sys.cfg.wave * 300
+    const dx = p.start.x - p.pos.x
+    const dy = p.start.y - p.pos.y
+    p.vel.x += dx / r * p.sys.cfg.wave
+    p.vel.y += dy / r * p.sys.cfg.wave
+  },
+
+  pulse: (p, t) => {
+    const d = Math.sin(t * 0.005)
+    const f = 1 + d * p.sys.cfg.wave * 0.2
+    p.vel.x *= f
+    p.vel.y *= f
   }
 }
 
@@ -79,6 +101,14 @@ class Particles {
 
     this.resize()
     this.animate()
+    this.updateBehaviorDisplay()
+  }
+
+  updateBehaviorDisplay() {
+    const display = document.getElementById('currentBehavior')
+    if (display) {
+      display.textContent = ` (${this.behavior})`
+    }
   }
 
   resize() {
@@ -146,6 +176,16 @@ class Particles {
     // Add damping
     p.vel.x *= 0.99
     p.vel.y *= 0.99
+
+    // Keep particles within bounds
+    if (p.pos.x < 0 || p.pos.x > this.canvas.width) {
+      p.vel.x *= -0.8
+      p.pos.x = Math.max(0, Math.min(p.pos.x, this.canvas.width))
+    }
+    if (p.pos.y < 0 || p.pos.y > this.canvas.height) {
+      p.vel.y *= -0.8
+      p.pos.y = Math.max(0, Math.min(p.pos.y, this.canvas.height))
+    }
   }
 
   draw(p, i) {
@@ -192,6 +232,7 @@ const controls = {
     const types = Object.keys(behaviors)
     const current = types.indexOf(sys.behavior)
     sys.behavior = types[(current + 1) % types.length]
+    sys.updateBehaviorDisplay()
   }
 }
 
